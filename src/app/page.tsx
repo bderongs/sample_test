@@ -1,41 +1,103 @@
 // Main test page component displaying the MCQ test interface
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { CheckCircle2, AlertCircle, Clock, FileText, Play, BookOpen, Target, Award } from 'lucide-react'
 import { sampleQuestions } from '@/data/questions'
+import {
+  startProctorSession,
+  markProctorEvent,
+  endProctorSession,
+  isProctorLoaded,
+  type ProctorEvent,
+} from '@/lib/proctor'
 
 export default function TestPage() {
   const [hasStarted, setHasStarted] = useState(false)
   const [currentQuestion, setCurrentQuestion] = useState(0)
   const [answers, setAnswers] = useState<Record<number, number>>({})
   const [showResults, setShowResults] = useState(false)
+  const [proctorError, setProctorError] = useState<string | null>(null)
+  const [isStartingProctor, setIsStartingProctor] = useState(false)
 
   const question = sampleQuestions[currentQuestion]
   const selectedAnswer = answers[currentQuestion]
   const totalQuestions = sampleQuestions.length
   const answeredCount = Object.keys(answers).length
 
+  // Monitor ProctorJS SDK loading
+  useEffect(() => {
+    const checkProctor = setInterval(() => {
+      if (isProctorLoaded()) {
+        console.log('ProctorJS SDK is now available')
+        clearInterval(checkProctor)
+      }
+    }, 1000)
+
+    // Cleanup after 30 seconds
+    const timeout = setTimeout(() => {
+      clearInterval(checkProctor)
+    }, 30000)
+
+    return () => {
+      clearInterval(checkProctor)
+      clearTimeout(timeout)
+    }
+  }, [])
+
   const handleAnswerSelect = (answerIndex: number) => {
     setAnswers(prev => ({
       ...prev,
       [currentQuestion]: answerIndex
     }))
+    
+    // Mark proctor event when question is answered
+    markProctorEvent('QUESTION_ANSWERED', {
+      questionId: currentQuestion + 1,
+      answerIndex: answerIndex,
+      timestamp: new Date().toISOString(),
+    })
   }
 
   const handleNext = () => {
     if (currentQuestion < totalQuestions - 1) {
       setCurrentQuestion(prev => prev + 1)
+      // Mark navigation event
+      markProctorEvent('QUESTION_NAVIGATED', {
+        from: currentQuestion + 1,
+        to: currentQuestion + 2,
+      })
     }
   }
 
   const handlePrevious = () => {
     if (currentQuestion > 0) {
       setCurrentQuestion(prev => prev - 1)
+      // Mark navigation event
+      markProctorEvent('QUESTION_NAVIGATED', {
+        from: currentQuestion + 1,
+        to: currentQuestion,
+      })
     }
   }
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    // Mark test completion event
+    markProctorEvent('TEST_SUBMITTED', {
+      totalQuestions: totalQuestions,
+      answeredQuestions: Object.keys(answers).length,
+      timestamp: new Date().toISOString(),
+    })
+
+    // End proctoring session
+    try {
+      const summary = await endProctorSession()
+      console.log('Proctoring session ended:', summary)
+      // You can store the summary or send it to your backend
+    } catch (error) {
+      console.error('Error ending proctoring session:', error)
+    }
+
     setShowResults(true)
   }
 
@@ -122,6 +184,7 @@ export default function TestPage() {
               setCurrentQuestion(0)
               setAnswers({})
               setHasStarted(false)
+              setProctorError(null)
             }}
             className="mt-8 w-full bg-indigo-600 text-white py-3 rounded-lg font-semibold hover:bg-indigo-700 transition-colors"
           >
@@ -225,20 +288,118 @@ export default function TestPage() {
                   <CheckCircle2 className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
                   <span>Click "Submit Test" when you're ready to see your results</span>
                 </li>
+                <li className="flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
+                  <span>
+                    <strong>Proctoring:</strong> This test uses ProctorSafe for monitoring. 
+                    You'll need to allow camera and microphone access when starting the test.
+                  </span>
+                </li>
               </ul>
             </div>
 
             {/* Start Button */}
             <div className="text-center">
+              {proctorError && (
+                <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
+                    <div className="text-left">
+                      <p className="font-semibold text-red-900 mb-1">Proctoring Setup Error</p>
+                      <p className="text-sm text-red-700">{proctorError}</p>
+                      <p className="text-xs text-red-600 mt-2">
+                        Please ensure your camera and microphone permissions are enabled.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
               <button
-                onClick={() => setHasStarted(true)}
-                className="inline-flex items-center gap-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-8 py-4 rounded-xl font-semibold text-lg hover:from-indigo-700 hover:to-purple-700 transition-all shadow-lg hover:shadow-xl transform hover:scale-105"
+                onClick={async () => {
+                  setIsStartingProctor(true)
+                  setProctorError(null)
+
+                  // Wait for ProctorJS to load if needed
+                  // The SDK auto-loads dependencies (TensorFlow.js, modern-face-api) which may take time
+                  let retries = 0
+                  const maxRetries = 30 // Wait up to 15 seconds (30 * 500ms)
+                  while (!isProctorLoaded() && retries < maxRetries) {
+                    await new Promise(resolve => setTimeout(resolve, 500))
+                    retries++
+                  }
+
+                  if (!isProctorLoaded()) {
+                    setProctorError(
+                      'ProctorJS SDK failed to load. The script may still be loading dependencies. ' +
+                      'Please wait a moment and try again, or refresh the page.'
+                    )
+                    setIsStartingProctor(false)
+                    return
+                  }
+
+                  try {
+                    // Start proctoring session with event handler
+                    await startProctorSession((event: ProctorEvent) => {
+                      console.log('Proctor event:', event)
+                      
+                      // Handle specific events
+                      switch (event.type) {
+                        case 'FACE_MISSING':
+                          console.warn('Face not detected - please ensure your face is visible')
+                          break
+                        case 'MULTIPLE_FACES':
+                          console.warn('Multiple faces detected')
+                          break
+                        case 'TAB_BLUR':
+                          console.warn('Tab switched - warning issued')
+                          break
+                        case 'MIC_PEAK':
+                          // Audio detected - normal
+                          break
+                        default:
+                          // Custom events or other system events
+                          break
+                      }
+                    })
+
+                    // Mark test start event
+                    markProctorEvent('TEST_STARTED', {
+                      totalQuestions: totalQuestions,
+                      timestamp: new Date().toISOString(),
+                    })
+
+                    // Start the test
+                    setHasStarted(true)
+                  } catch (error) {
+                    console.error('Error starting proctoring:', error)
+                    setProctorError(
+                      error instanceof Error
+                        ? error.message
+                        : 'Failed to start proctoring session. Please check your camera and microphone permissions.'
+                    )
+                  } finally {
+                    setIsStartingProctor(false)
+                  }
+                }}
+                disabled={isStartingProctor}
+                className="inline-flex items-center gap-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-8 py-4 rounded-xl font-semibold text-lg hover:from-indigo-700 hover:to-purple-700 transition-all shadow-lg hover:shadow-xl transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
               >
-                <Play className="w-6 h-6" />
-                Let's Start
+                {isStartingProctor ? (
+                  <>
+                    <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Starting Proctoring...
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-6 h-6" />
+                    Let's Start
+                  </>
+                )}
               </button>
               <p className="text-sm text-gray-500 mt-4">
-                Click the button above to begin the test
+                {isStartingProctor
+                  ? 'Initializing proctoring session...'
+                  : 'Click the button above to begin the test'}
               </p>
             </div>
           </div>

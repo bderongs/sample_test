@@ -1,6 +1,7 @@
 // Root layout component for the Next.js app
 import type { Metadata } from 'next'
 import './globals.css'
+import ProctorScriptLoader from '@/components/ProctorScriptLoader'
 
 export const metadata: Metadata = {
   title: 'Sample Test App',
@@ -14,7 +15,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        {/* ProctorJS SDK - loaded exactly as in the working example.html */}
+        <ProctorScriptLoader />
+        {children}
+      </body>
     </html>
   )
 }
