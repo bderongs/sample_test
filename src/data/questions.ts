@@ -1,12 +1,27 @@
 // Sample questions data for the MCQ test application
-export interface Question {
+// Supports both multiple choice questions (MCQ) and typing questions
+export type QuestionType = 'mcq' | 'typing'
+
+export interface MCQQuestion {
+  type: 'mcq'
   question: string
   options: string[]
   correctAnswer: number
 }
 
+export interface TypingQuestion {
+  type: 'typing'
+  question: string
+  correctAnswer: string
+  // Optional: case-sensitive matching (default: false)
+  caseSensitive?: boolean
+}
+
+export type Question = MCQQuestion | TypingQuestion
+
 export const sampleQuestions: Question[] = [
   {
+    type: 'mcq',
     question: "What is the capital city of France?",
     options: [
       "London",
@@ -17,6 +32,7 @@ export const sampleQuestions: Question[] = [
     correctAnswer: 2
   },
   {
+    type: 'mcq',
     question: "Which planet is known as the Red Planet?",
     options: [
       "Venus",
@@ -27,6 +43,13 @@ export const sampleQuestions: Question[] = [
     correctAnswer: 1
   },
   {
+    type: 'typing',
+    question: "What is the chemical formula for water? (Type your answer)",
+    correctAnswer: "H2O",
+    caseSensitive: false
+  },
+  {
+    type: 'mcq',
     question: "What is the largest ocean on Earth?",
     options: [
       "Atlantic Ocean",
@@ -37,6 +60,7 @@ export const sampleQuestions: Question[] = [
     correctAnswer: 3
   },
   {
+    type: 'mcq',
     question: "Who painted the Mona Lisa?",
     options: [
       "Vincent van Gogh",
@@ -47,6 +71,13 @@ export const sampleQuestions: Question[] = [
     correctAnswer: 2
   },
   {
+    type: 'typing',
+    question: "In which year did the first man land on the moon? (Type the year)",
+    correctAnswer: "1969",
+    caseSensitive: false
+  },
+  {
+    type: 'mcq',
     question: "What is the chemical symbol for gold?",
     options: [
       "Go",
@@ -57,6 +88,7 @@ export const sampleQuestions: Question[] = [
     correctAnswer: 2
   },
   {
+    type: 'mcq',
     question: "Which programming language is known as the 'language of the web'?",
     options: [
       "Python",
@@ -67,6 +99,7 @@ export const sampleQuestions: Question[] = [
     correctAnswer: 2
   },
   {
+    type: 'mcq',
     question: "What is the smallest prime number?",
     options: [
       "0",
@@ -77,6 +110,13 @@ export const sampleQuestions: Question[] = [
     correctAnswer: 2
   },
   {
+    type: 'typing',
+    question: "What is the name of the longest river in the world? (Type your answer)",
+    correctAnswer: "Nile",
+    caseSensitive: false
+  },
+  {
+    type: 'mcq',
     question: "Which continent is the largest by land area?",
     options: [
       "Africa",
@@ -87,6 +127,7 @@ export const sampleQuestions: Question[] = [
     correctAnswer: 2
   },
   {
+    type: 'mcq',
     question: "What is the speed of light in a vacuum (approximately)?",
     options: [
       "300,000 km/s",
@@ -97,6 +138,7 @@ export const sampleQuestions: Question[] = [
     correctAnswer: 0
   },
   {
+    type: 'mcq',
     question: "Which year did World War II end?",
     options: [
       "1943",

@@ -15,7 +15,8 @@ import {
 export default function TestPage() {
   const [hasStarted, setHasStarted] = useState(false)
   const [currentQuestion, setCurrentQuestion] = useState(0)
-  const [answers, setAnswers] = useState<Record<number, number>>({})
+  // Answers can be either a number (for MCQ) or a string (for typing questions)
+  const [answers, setAnswers] = useState<Record<number, number | string>>({})
   const [showResults, setShowResults] = useState(false)
   const [proctorError, setProctorError] = useState<string | null>(null)
   const [isStartingProctor, setIsStartingProctor] = useState(false)
@@ -55,6 +56,21 @@ export default function TestPage() {
     markProctorEvent('QUESTION_ANSWERED', {
       questionId: currentQuestion + 1,
       answerIndex: answerIndex,
+      timestamp: new Date().toISOString(),
+    })
+  }
+
+  const handleTypingAnswer = (answer: string) => {
+    setAnswers(prev => ({
+      ...prev,
+      [currentQuestion]: answer
+    }))
+    
+    // Mark proctor event when question is answered
+    markProctorEvent('QUESTION_ANSWERED', {
+      questionId: currentQuestion + 1,
+      answerType: 'typing',
+      answer: answer,
       timestamp: new Date().toISOString(),
     })
   }
@@ -104,8 +120,26 @@ export default function TestPage() {
   const calculateScore = () => {
     let correct = 0
     sampleQuestions.forEach((q, index) => {
-      if (answers[index] === q.correctAnswer) {
-        correct++
+      const userAnswer = answers[index]
+      if (userAnswer === undefined) return
+      
+      if (q.type === 'mcq') {
+        if (userAnswer === q.correctAnswer) {
+          correct++
+        }
+      } else if (q.type === 'typing') {
+        const userAnswerStr = String(userAnswer).trim()
+        const correctAnswerStr = q.correctAnswer.trim()
+        
+        if (q.caseSensitive) {
+          if (userAnswerStr === correctAnswerStr) {
+            correct++
+          }
+        } else {
+          if (userAnswerStr.toLowerCase() === correctAnswerStr.toLowerCase()) {
+            correct++
+          }
+        }
       }
     })
     return { correct, total: totalQuestions }
@@ -142,7 +176,26 @@ export default function TestPage() {
           <div className="space-y-4">
             {sampleQuestions.map((q, index) => {
               const userAnswer = answers[index]
-              const isCorrect = userAnswer === q.correctAnswer
+              let isCorrect = false
+              let displayAnswer = 'Not answered'
+              let correctAnswerDisplay = ''
+              
+              if (q.type === 'mcq') {
+                isCorrect = userAnswer === q.correctAnswer
+                displayAnswer = typeof userAnswer === 'number' ? q.options[userAnswer] : 'Not answered'
+                correctAnswerDisplay = q.options[q.correctAnswer]
+              } else if (q.type === 'typing') {
+                const userAnswerStr = String(userAnswer || '').trim()
+                const correctAnswerStr = q.correctAnswer.trim()
+                
+                if (q.caseSensitive) {
+                  isCorrect = userAnswerStr === correctAnswerStr
+                } else {
+                  isCorrect = userAnswerStr.toLowerCase() === correctAnswerStr.toLowerCase()
+                }
+                displayAnswer = userAnswerStr || 'Not answered'
+                correctAnswerDisplay = q.correctAnswer
+              }
               
               return (
                 <div
@@ -164,11 +217,11 @@ export default function TestPage() {
                         Question {index + 1}: {q.question}
                       </p>
                       <p className="text-sm text-gray-600">
-                        Your answer: {q.options[userAnswer] || 'Not answered'}
+                        Your answer: {displayAnswer}
                       </p>
                       {!isCorrect && (
                         <p className="text-sm text-green-700 font-medium mt-1">
-                          Correct answer: {q.options[q.correctAnswer]}
+                          Correct answer: {correctAnswerDisplay}
                         </p>
                       )}
                     </div>
@@ -465,37 +518,56 @@ export default function TestPage() {
           </div>
 
           {/* Answer Options */}
-          <div className="space-y-3">
-            {question.options.map((option, index) => {
-              const isSelected = selectedAnswer === index
-              return (
-                <button
-                  key={index}
-                  onClick={() => handleAnswerSelect(index)}
-                  className={`w-full text-left p-4 rounded-lg border-2 transition-all ${
-                    isSelected
-                      ? 'border-indigo-600 bg-indigo-50 shadow-md'
-                      : 'border-gray-200 bg-white hover:border-indigo-300 hover:bg-indigo-50'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
-                        isSelected
-                          ? 'border-indigo-600 bg-indigo-600'
-                          : 'border-gray-300'
-                      }`}
-                    >
-                      {isSelected && (
-                        <div className="w-2 h-2 rounded-full bg-white" />
-                      )}
+          {question.type === 'mcq' ? (
+            <div className="space-y-3">
+              {question.options.map((option, index) => {
+                const isSelected = selectedAnswer === index
+                return (
+                  <button
+                    key={index}
+                    onClick={() => handleAnswerSelect(index)}
+                    className={`w-full text-left p-4 rounded-lg border-2 transition-all ${
+                      isSelected
+                        ? 'border-indigo-600 bg-indigo-50 shadow-md'
+                        : 'border-gray-200 bg-white hover:border-indigo-300 hover:bg-indigo-50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                          isSelected
+                            ? 'border-indigo-600 bg-indigo-600'
+                            : 'border-gray-300'
+                        }`}
+                      >
+                        {isSelected && (
+                          <div className="w-2 h-2 rounded-full bg-white" />
+                        )}
+                      </div>
+                      <span className="font-medium text-gray-900">{option}</span>
                     </div>
-                    <span className="font-medium text-gray-900">{option}</span>
-                  </div>
-                </button>
-              )
-            })}
-          </div>
+                  </button>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="relative">
+                <input
+                  type="text"
+                  value={typeof selectedAnswer === 'string' ? selectedAnswer : ''}
+                  onChange={(e) => handleTypingAnswer(e.target.value)}
+                  placeholder="Type your answer here..."
+                  className="w-full px-4 py-3 rounded-lg border-2 border-gray-200 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 outline-none transition-all text-gray-900 placeholder:text-gray-400"
+                />
+              </div>
+              <p className="text-sm text-gray-500 italic">
+                {question.caseSensitive 
+                  ? 'Note: Answer is case-sensitive' 
+                  : 'Note: Answer is not case-sensitive'}
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Navigation */}
@@ -530,22 +602,28 @@ export default function TestPage() {
 
         {/* Question Navigation Dots */}
         <div className="mt-6 flex flex-wrap gap-2 justify-center">
-          {sampleQuestions.map((_, index) => {
+          {sampleQuestions.map((q, index) => {
             const isAnswered = answers[index] !== undefined
             const isCurrent = index === currentQuestion
             return (
               <button
                 key={index}
                 onClick={() => setCurrentQuestion(index)}
-                className={`w-10 h-10 rounded-lg font-semibold transition-all ${
+                className={`w-10 h-10 rounded-lg font-semibold transition-all relative ${
                   isCurrent
                     ? 'bg-indigo-600 text-white scale-110'
                     : isAnswered
                     ? 'bg-green-500 text-white'
                     : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
                 }`}
+                title={q.type === 'typing' ? 'Typing question' : 'Multiple choice'}
               >
                 {index + 1}
+                {q.type === 'typing' && (
+                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-blue-500 rounded-full text-[10px] flex items-center justify-center text-white">
+                    T
+                  </span>
+                )}
               </button>
             )
           })}
