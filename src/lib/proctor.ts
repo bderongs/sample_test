@@ -13,7 +13,10 @@ declare global {
       }>
       start: (
         config: {
+          tenantName: string
           applicationReference: string
+          timestamp?: string
+          signature?: string
           handshakeToken?: string
           apiEndpoint?: string
           settings?: {
@@ -86,6 +89,7 @@ export async function startProctorSession(
   // Start the session (matching the working example.html - no handshakeToken needed)
   await window.Proctor.start(
     {
+      tenantName: 'demo',
       applicationReference: 'sample-test-app',
       // Note: handshakeToken is optional - not used in the working example
       settings: {
